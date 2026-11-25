@@ -789,3 +789,53 @@ form.cat-row input:not([type=checkbox]):not([type=hidden]){margin-bottom:0}
 .file-row .actions {
     margin: 0
 }
+
+
+/* Bulk ZIP importer */
+.bulk-import-panel {
+    grid-column: 1 / -1
+}
+.bulk-options {
+    align-items: end;
+    margin: 1rem 0
+}
+.bulk-options .checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    margin: 0 0 .65rem
+}
+.bulk-options input[type="checkbox"] {
+    width: auto
+}
+.bulk-preview-list {
+    display: grid;
+    gap: .6rem;
+    max-height: 360px;
+    overflow: auto;
+    margin: 1rem 0
+}
+.bulk-preview-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    padding: .8rem 1rem;
+    border: 1px solid var(--border, #ddd);
+    border-radius: 6px
+}
+.bulk-preview-item p {
+    margin: .2rem 0
+}
+.bulk-preview-item .duplicate {
+    color: #9a5b00;
+    font-weight: 600
+}
+.bulk-preview-item .ready {
+    color: #267344;
+    font-weight: 600
+}
+@media (max-width: 700px) {
+    .bulk-import-panel { grid-column: auto }
+    .bulk-preview-item { align-items: flex-start; flex-direction: column }
+}

@@ -42,22 +42,32 @@
                 <button type="button" class="button button-secondary" data-tab="stats" aria-pressed="false">Statistik</button>
             </nav>
             <div class="dashboard-grid" id="panel-projects" data-panel>
-                
-                <section class="card" style="margin-bottom:1.5rem" aria-labelledby="bulk-heading">
-                    <h2 id="bulk-heading">Bulkimport fra ZIP</h2>
-                    <p>ZIP-struktur: <code>dansk/Projektnavn/filer</code> og <code>mediegrafiker/Projektnavn/filer</code>. Mapper under projektmappen bevares.</p>
-                    <form id="bulk-form">
-                        <label for="bulk-archive">ZIP-fil</label>
-                        <input id="bulk-archive" name="archive" type="file" accept=".zip,application/zip" required>
-                        <button class="button" id="bulk-preview-button" type="submit">Scan ZIP og vis projekter</button>
-                    </form>
-                    <p id="bulk-status" class="status" role="status"></p>
-                    <div id="bulk-preview" hidden>
-                        <div id="bulk-project-list"></div>
-                        <button class="button" id="bulk-import-button" type="button">Importer valgte projekter som kladder</button>
+                <section class="card bulk-import-panel" aria-labelledby="bulk-import-title">
+                    <h2 id="bulk-import-title">Masseimport af projekter</h2>
+                    <p>Importér mange projekter på én gang fra en ZIP-fil. Hver projektmappe bliver til ét projekt.</p>
+                    <label for="bulk-zip">ZIP-fil</label>
+                    <input id="bulk-zip" type="file" accept=".zip,application/zip">
+                    <p class="field-help">ZIP-struktur: <code>dansk/Projektnavn/filer...</code> og <code>mediegrafiker/Projektnavn/filer...</code>. Op til 10 GB. Mappernes navne bliver projekttitler.</p>
+                    <div class="form-row bulk-options">
+                        <div>
+                            <label for="bulk-status">Status på importerede projekter</label>
+                            <select id="bulk-status"><option value="draft">Kladde (anbefalet)</option><option value="published">Udgiv med det samme</option></select>
+                        </div>
+                        <label class="checkbox-label"><input id="bulk-skip-duplicates" type="checkbox" checked> Spring projekter over, der allerede findes med samme titel og kategori</label>
+                    </div>
+                    <div class="actions">
+                        <button class="button" id="bulk-preview" type="button" disabled>Upload ZIP og vis forhåndsvisning</button>
+                        <button class="button button-secondary" id="bulk-cancel" type="button" hidden>Annuller import</button>
+                    </div>
+                    <progress id="bulk-progress" class="upload-progress" max="100" value="0" hidden></progress>
+                    <p id="bulk-status-message" class="status" role="status"></p>
+                    <div id="bulk-preview-results" hidden>
+                        <h3>Forhåndsvisning</h3>
+                        <p id="bulk-summary"></p>
+                        <div class="bulk-preview-list" id="bulk-preview-list"></div>
+                        <button class="button" id="bulk-confirm" type="button">Importer projekterne</button>
                     </div>
                 </section>
-
                 <section class="card editor" aria-labelledby="editor-title">
                     <h2 id="editor-title">Nyt projekt</h2>
                     <p id="editor-status" class="status" role="status"></p>
