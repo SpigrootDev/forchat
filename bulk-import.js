@@ -1,36 +1,105 @@
 (() => {
   'use strict';
   if (document.body.dataset.page !== 'dashboard') return;
-  const form = document.querySelector('#bulk-form');
-  if (!form) return;
-  const {upload, formatBytes} = window.Portfolio;
-  const status = document.querySelector('#bulk-status');
-  const preview = document.querySelector('#bulk-preview');
-  const list = document.querySelector('#bulk-project-list');
-  const scanButton = document.querySelector('#bulk-preview-button');
-  const importButton = document.querySelector('#bulk-import-button');
+  const {api, upload, formatBytes, status: setStatus} = window.Portfolio;
+  const fileInput = document.querySelector('#bulk-zip');
+  const previewButton = document.querySelector('#bulk-preview');
+  const cancelButton = document.querySelector('#bulk-cancel');
+  const confirmButton = document.querySelector('#bulk-confirm');
+  const progress = document.querySelector('#bulk-progress');
+  const message = document.querySelector('#bulk-status-message');
+  const preview = document.querySelector('#bulk-preview-results');
+  const summary = document.querySelector('#bulk-summary');
+  const list = document.querySelector('#bulk-preview-list');
+  const statusSelect = document.querySelector('#bulk-status');
+  const skipDuplicates = document.querySelector('#bulk-skip-duplicates');
+  if (!fileInput || !previewButton || !confirmButton) return;
+
   let token = '';
-  function message(text, kind='') { status.textContent=text; status.className=('status '+kind).trim(); }
-  form.addEventListener('submit', async e=>{
-    e.preventDefault(); scanButton.disabled=true; preview.hidden=true; list.replaceChildren(); message('Scanner ZIP…');
+  let projects = [];
+  let busy = false;
+  const say = (text, kind='') => setStatus(message, text, kind);
+  function lock(value) {
+    busy = value;
+    previewButton.disabled = value || !fileInput.files.length;
+    confirmButton.disabled = value;
+    cancelButton.disabled = value;
+    fileInput.disabled = value;
+    statusSelect.disabled = value;
+    skipDuplicates.disabled = value;
+  }
+  function clearPreview() {
+    token = ''; projects = []; preview.hidden = true; list.replaceChildren();
+    progress.hidden = true; progress.value = 0; cancelButton.hidden = true;
+  }
+  fileInput.addEventListener('change', () => {
+    clearPreview();
+    previewButton.disabled = !fileInput.files.length;
+    say(fileInput.files.length ? 'ZIP-fil valgt. Klar til at scanne.' : '');
+  });
+  cancelButton.addEventListener('click', () => {
+    clearPreview(); fileInput.value = ''; previewButton.disabled = true;
+    say('Importen blev annulleret.');
+  });
+  previewButton.addEventListener('click', async () => {
+    if (busy || !fileInput.files.length) return;
+    lock(true); clearPreview(); progress.hidden = false; progress.value = 0;
+    say('Uploader og scanner ZIP-filen…');
     try {
-      const fd=new FormData(form); const r=await upload('bulk_preview',fd,(loaded,total)=>message('Uploader ZIP… '+Math.round(loaded/total*100)+'% ('+formatBytes(loaded)+' af '+formatBytes(total)+')')); token=r.token;
-      r.projects.forEach((p,i)=>{
-        const label=document.createElement('label'); label.className='checkbox-label';
-        const input=document.createElement('input'); input.type='checkbox'; input.checked=true; input.value=p.category+'/'+p.title;
-        input.dataset.projectKey=input.value;
-        const text=document.createElement('span'); text.textContent=p.title+' · '+(p.category==='dansk'?'Dansk':'Mediegrafiker')+' · '+p.files.length+' filer · '+(p.totalSize/1048576).toFixed(1)+' MB';
-        label.append(input,text); list.append(label);
+      const fd = new FormData(); fd.set('archive', fileInput.files[0]);
+      const result = await upload('bulk_preview', fd, (loaded, total) => {
+        progress.value = Math.round(loaded / total * 100);
+        say('Uploader ZIP… ' + progress.value + '% (' + formatBytes(loaded) + ' af ' + formatBytes(total) + ')');
       });
-      preview.hidden=false; message(r.projects.length+' projekter fundet. Alle er valgt som standard.','success');
-    } catch(err){message(err.message,'error')} finally{scanButton.disabled=false}
+      token = result.token; projects = result.projects || [];
+      let existing = [];
+      if (skipDuplicates.checked) {
+        try { existing = (await api('posts')).posts || []; } catch {}
+      }
+      const existingKeys = new Set(existing.map(p => String(p.category).toLowerCase() + '/' + String(p.title).trim().toLowerCase()));
+      const skipped = [];
+      projects = projects.map(p => ({...p, key: p.category + '/' + p.title,
+        duplicate: existingKeys.has(p.category + '/' + p.title.trim().toLowerCase())}));
+      list.replaceChildren();
+      for (const project of projects) {
+        const label = document.createElement('label'); label.className = 'checkbox-label';
+        const checkbox = document.createElement('input'); checkbox.type = 'checkbox';
+        checkbox.value = project.key; checkbox.checked = !project.duplicate;
+        checkbox.disabled = project.duplicate;
+        const detail = document.createElement('span');
+        const size = formatBytes(project.totalSize || 0);
+        detail.textContent = project.title + ' · ' + (project.category === 'dansk' ? 'Dansk' : 'Mediegrafiker') +
+          ' · ' + project.files.length + ' filer · ' + size + (project.duplicate ? ' · Findes allerede (sprunget over)' : '');
+        label.append(checkbox, detail); list.append(label);
+      }
+      const eligible = projects.filter(p => !p.duplicate).length;
+      summary.textContent = projects.length + ' projekter fundet. ' + (projects.length - eligible) +
+        ' eksisterer allerede. ' + eligible + ' kan importeres.';
+      preview.hidden = false; cancelButton.hidden = false; progress.hidden = true;
+      say('ZIP-filen er scannet. Kontrollér projekterne nedenfor.', 'success');
+    } catch (error) {
+      say(error.message || 'Kunne ikke scanne ZIP-filen.', 'error');
+      clearPreview();
+    } finally { lock(false); }
   });
-  importButton.addEventListener('click',async()=>{
-    const selected=[...list.querySelectorAll('input:checked')].map(x=>x.dataset.projectKey);
-    if(!selected.length){message('Vælg mindst ét projekt.','error');return}
-    importButton.disabled=true; message('Importerer projekter som kladder…');
-    const fd=new FormData(); fd.set('token',token); fd.set('selected',JSON.stringify(selected));
-    try{const r=await upload('bulk_import',fd);message(r.imported+' projekter importeret som kladder.','success');preview.hidden=true;form.reset();token='';}
-    catch(err){message(err.message,'error')}finally{importButton.disabled=false}
+  confirmButton.addEventListener('click', async () => {
+    if (busy || !token) return;
+    const selected = [...list.querySelectorAll('input[type=checkbox]:checked')].map(x => x.value);
+    if (!selected.length) { say('Vælg mindst ét projekt, der skal importeres.', 'error'); return; }
+    lock(true); progress.hidden = false; progress.value = 0;
+    say('Importerer ' + selected.length + ' projekter…');
+    try {
+      const fd = new FormData(); fd.set('token', token); fd.set('selected', JSON.stringify(selected));
+      fd.set('status', statusSelect.value);
+      const result = await upload('bulk_import', fd, (loaded, total) => {
+        progress.value = Math.round(loaded / total * 100);
+      });
+      say(result.imported + ' projekter importeret som ' + (statusSelect.value === 'draft' ? 'kladder' : 'offentlige projekter') + '.', 'success');
+      clearPreview(); fileInput.value = ''; previewButton.disabled = true;
+      if (typeof window.Portfolio.api === 'function') window.location.reload();
+    } catch (error) { say(error.message || 'Importen mislykkedes.', 'error'); }
+    finally { lock(false); }
   });
+  previewButton.disabled = !fileInput.files.length;
+  confirmButton.disabled = false;
 })();
