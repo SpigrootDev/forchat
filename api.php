@@ -103,7 +103,6 @@ try {
     $db->exec('CREATE TABLE IF NOT EXISTS visits (day TEXT, page TEXT)');
     $action = $_GET['action'] ?? '';
     if (!is_string($action)) reply(['error' => 'Ugyldig handling.'], 400);
-    bulk_handle($action, $db);
     // Files are shared with every visitor; passwords and database paths never enter the HTML.
     if ($action === 'file') {
         $id = $_GET['id'] ?? '';
@@ -130,6 +129,7 @@ try {
     start_session();
     if (time() - ($_SESSION['active'] ?? time()) > 7200) { $_SESSION = []; session_regenerate_id(true); }
     $_SESSION['csrf'] ??= bin2hex(random_bytes(32));
+    bulk_handle($action, $db);
     if (!empty($_SESSION['admin'])) $_SESSION['active'] = time();
     if ($action === 'session') reply(['loggedIn' => !empty($_SESSION['admin']), 'configured' => !empty($config['hash']), 'csrf' => $_SESSION['csrf']]);
     // Visitors only see published projects whose publish date has arrived; the admin sees everything.
