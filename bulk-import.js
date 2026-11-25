@@ -3,6 +3,7 @@
   if (document.body.dataset.page !== 'dashboard') return;
   const form = document.querySelector('#bulk-form');
   if (!form) return;
+  const {upload, formatBytes} = window.Portfolio;
   const status = document.querySelector('#bulk-status');
   const preview = document.querySelector('#bulk-preview');
   const list = document.querySelector('#bulk-project-list');
@@ -10,20 +11,10 @@
   const importButton = document.querySelector('#bulk-import-button');
   let token = '';
   function message(text, kind='') { status.textContent=text; status.className=('status '+kind).trim(); }
-  function api(action, data) {
-    return new Promise((resolve,reject) => {
-      const xhr=new XMLHttpRequest(); xhr.open('POST','api.php?action='+encodeURIComponent(action));
-      xhr.setRequestHeader('X-CSRF-Token', window.__portfolioCsrf || '');
-      xhr.upload.onprogress=e=>{if(e.lengthComputable) message('Uploader ZIP… '+Math.round(e.loaded/e.total*100)+'%');};
-      xhr.onload=()=>{let r;try{r=JSON.parse(xhr.responseText)}catch{reject(new Error('Serveren returnerede ikke gyldig JSON. Kontrollér upload-grænserne.'));return}
-        if(xhr.status<200||xhr.status>=300){reject(new Error(r.error||'Importen mislykkedes.'));return} resolve(r)};
-      xhr.onerror=()=>reject(new Error('Ingen forbindelse til serveren.')); xhr.send(data);
-    });
-  }
   form.addEventListener('submit', async e=>{
     e.preventDefault(); scanButton.disabled=true; preview.hidden=true; list.replaceChildren(); message('Scanner ZIP…');
     try {
-      const fd=new FormData(form); const r=await api('bulk_preview',fd); token=r.token;
+      const fd=new FormData(form); const r=await upload('bulk_preview',fd,(loaded,total)=>message('Uploader ZIP… '+Math.round(loaded/total*100)+'% ('+formatBytes(loaded)+' af '+formatBytes(total)+')')); token=r.token;
       r.projects.forEach((p,i)=>{
         const label=document.createElement('label'); label.className='checkbox-label';
         const input=document.createElement('input'); input.type='checkbox'; input.checked=true; input.value=p.category+'/'+p.title;
@@ -39,7 +30,7 @@
     if(!selected.length){message('Vælg mindst ét projekt.','error');return}
     importButton.disabled=true; message('Importerer projekter som kladder…');
     const fd=new FormData(); fd.set('token',token); fd.set('selected',JSON.stringify(selected));
-    try{const r=await api('bulk_import',fd);message(r.imported+' projekter importeret som kladder.','success');preview.hidden=true;form.reset();token='';}
+    try{const r=await upload('bulk_import',fd);message(r.imported+' projekter importeret som kladder.','success');preview.hidden=true;form.reset();token='';}
     catch(err){message(err.message,'error')}finally{importButton.disabled=false}
   });
 })();
