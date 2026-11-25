@@ -83,6 +83,8 @@ function bulk_handle(string $action, PDO $db): void {
                 $parts = explode('/', $normalized);
                 if (count($parts) < 3 || in_array('..', $parts, true) || in_array('.', $parts, true)) continue;
                 $category = strtolower(trim($parts[0]));
+                // Accept both folder names for the Mediegrafiker category.
+                if ($category === 'mediegrafik') $category = 'mediegrafiker';
                 if (!in_array($category, ['dansk', 'mediegrafiker'], true)) continue;
                 $projectFolder = trim($parts[1]);
                 $relative = implode('/', array_slice($parts, 2));
