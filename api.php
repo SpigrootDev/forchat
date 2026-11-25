@@ -207,9 +207,10 @@ try {
             if ($zip->open($_FILES['archive']['tmp_name']) !== true) reply(['error' => 'ZIP-filen kunne ikke åbnes.'], 422);
             $projects = []; $total = 0; $maxFiles = 5000; $maxExpanded = 5 * 1024 * 1024 * 1024;
             for ($i = 0; $i < $zip->numFiles; $i++) {
-                $stat = $zip->statIndex($i); $path = str_replace('\\\\', '/', (string)($stat['name'] ?? ''));
-                if ($path === '' || str_starts_with($path, '/') || preg_match('/(^|\\/)\\.\\.?($|\\/)/', $path) || str_contains($path, "\\0") || str_ends_with($path, '/')) continue;
+                $stat = $zip->statIndex($i); $path = str_replace(chr(92), '/', (string)($stat['name'] ?? ''));
+                if ($path === '' || str_starts_with($path, '/') || str_contains($path, chr(0)) || str_ends_with($path, '/')) continue;
                 $parts = array_values(array_filter(explode('/', $path), fn($p) => $p !== ''));
+                if (in_array('.', $parts, true) || in_array('..', $parts, true)) continue;
                 if (count($parts) < 3 || !in_array($parts[0], ['dansk', 'mediegrafiker'], true)) continue;
                 $category = $parts[0]; $folder = $parts[1]; $key = $category . '/' . $folder;
                 if (!isset($projects[$key])) $projects[$key] = ['category'=>$category,'title'=>$folder,'files'=>[],'totalSize'=>0];
