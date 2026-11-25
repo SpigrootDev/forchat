@@ -258,7 +258,7 @@ try {
                 $idNew=bin2hex(random_bytes(16)); $main=array_shift($files);
                 $row=['id'=>$idNew,'title'=>substr($folder,0,120),'category'=>$category,'description'=>'','date'=>date('Y-m-d'),
                     'file_key'=>$main['key'],'file_name'=>$main['name'],'file_type'=>$main['type'],'file_size'=>$main['size'],
-                    'thumb_key'=>null,'thumb_type'=>null,'created_at'=>gmdate('Y-m-d\\TH:i:s\\Z'),'status'=>'draft','publish_at'=>null];
+                    'thumb_key'=>null,'thumb_type'=>null,'created_at'=>gmdate('Y-m-d\\TH:i:s\\Z'),'status'=>($_POST['status'] ?? 'draft') === 'published' ? 'published' : 'draft','publish_at'=>null];
                 $keys=array_keys($row); $q=$db->prepare('INSERT INTO posts ('.implode(',',$keys).') VALUES (:'.implode(',:',$keys).')'); $q->execute($row);
                 $ins=$db->prepare('INSERT INTO project_files (post_id,file_key,file_name,file_type,file_size) VALUES (?,?,?,?,?)');
                 foreach($files as $f) $ins->execute([$idNew,$f['key'],$f['name'],$f['type'],$f['size']]);
