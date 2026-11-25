@@ -2,6 +2,7 @@
 // The only PHP file. All pages and design remain HTML, CSS and JavaScript.
 declare(strict_types=1);
 const DATA_DIR = __DIR__ . '/../portfolio-data';
+require_once __DIR__ . '/bulk-import.php';
 // Login settings live outside the web root and outside git: portfolio-data/config.php returns ['user' => ..., 'hash' => password_hash(...)].
 $config = is_file(DATA_DIR . '/config.php') ? require DATA_DIR . '/config.php' : [];
 
@@ -102,6 +103,7 @@ try {
     $db->exec('CREATE TABLE IF NOT EXISTS visits (day TEXT, page TEXT)');
     $action = $_GET['action'] ?? '';
     if (!is_string($action)) reply(['error' => 'Ugyldig handling.'], 400);
+    bulk_handle($action, $db);
     // Files are shared with every visitor; passwords and database paths never enter the HTML.
     if ($action === 'file') {
         $id = $_GET['id'] ?? '';
