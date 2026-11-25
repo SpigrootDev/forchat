@@ -145,8 +145,8 @@ try {
             'days' => $db->query("SELECT day, COUNT(*) AS n FROM visits WHERE day >= date('now','-29 day') GROUP BY day ORDER BY day")->fetchAll(),
             'pages' => $db->query('SELECT page, COUNT(*) AS n FROM visits GROUP BY page ORDER BY n DESC LIMIT 10')->fetchAll()]]);
     }
-    if (!in_array($action, ['login', 'logout', 'track', 'contact', ...['save', 'delete', 'message_update', 'setting_save']], true)) reply(['error' => 'Ukendt handling.'], 404);
-    if (in_array($action, ['save', 'delete', 'message_update', 'setting_save'], true) && empty($_SESSION['admin'])) reply(['error' => 'Log ind for at fortsætte.'], 401);
+    if (!in_array($action, ['login', 'logout', 'track', 'contact', ...['save', 'delete', 'message_update', 'setting_save', 'bulk_preview', 'bulk_import']], true)) reply(['error' => 'Ukendt handling.'], 404);
+    if (in_array($action, ['save', 'delete', 'message_update', 'setting_save', 'bulk_preview', 'bulk_import'], true) && empty($_SESSION['admin'])) reply(['error' => 'Log ind for at fortsætte.'], 401);
     if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') reply(['error' => 'Brug POST.'], 405);
     if (!hash_equals($_SESSION['csrf'], $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '')) reply(['error' => 'Genindlæs siden og prøv igen.'], 403);
     if ($action === 'login') {
@@ -196,6 +196,80 @@ try {
         if (!$ok) reply(['error' => 'Ugyldig indstilling.'], 422);
         $q = $db->prepare($v === '' ? 'DELETE FROM settings WHERE k=?' : 'INSERT OR REPLACE INTO settings (k, v) VALUES (?, ?)'); $q->execute($v === '' ? [$k] : [$k, $v]); reply(['ok' => true]);
     }
+
+    // ZIP bulk import: dansk/ProjectName/files and mediegrafiker/ProjectName/files.
+    if (in_array($action, ['bulk_preview', 'bulk_import'], true)) {
+        if (empty($_SESSION['admin'])) reply(['error' => 'Log ind for at fortsætte.'], 401);
+        if ($action === 'bulk_preview') {
+            if (!class_exists(ZipArchive::class)) reply(['error' => 'PHP ZipArchive mangler. Installér/aktivér php-zip.'], 503);
+            if (!isset($_FILES['archive']) || $_FILES['archive']['error'] !== UPLOAD_ERR_OK || !is_uploaded_file($_FILES['archive']['tmp_name'])) reply(['error' => 'Vælg en gyldig ZIP-fil. Kontrollér serverens upload-grænser.'], 422);
+            $zip = new ZipArchive();
+            if ($zip->open($_FILES['archive']['tmp_name']) !== true) reply(['error' => 'ZIP-filen kunne ikke åbnes.'], 422);
+            $projects = []; $total = 0; $maxFiles = 5000; $maxExpanded = 5 * 1024 * 1024 * 1024;
+            for ($i = 0; $i < $zip->numFiles; $i++) {
+                $stat = $zip->statIndex($i); $path = str_replace('\\\\', '/', (string)($stat['name'] ?? ''));
+                if ($path === '' || str_starts_with($path, '/') || preg_match('/(^|\\/)\\.\\.?($|\\/)/', $path) || str_contains($path, "\\0") || str_ends_with($path, '/')) continue;
+                $parts = array_values(array_filter(explode('/', $path), fn($p) => $p !== ''));
+                if (count($parts) < 3 || !in_array($parts[0], ['dansk', 'mediegrafiker'], true)) continue;
+                $category = $parts[0]; $folder = $parts[1]; $key = $category . '/' . $folder;
+                if (!isset($projects[$key])) $projects[$key] = ['category'=>$category,'title'=>$folder,'files'=>[],'totalSize'=>0];
+                $size = (int)($stat['size'] ?? 0); $total += $size;
+                if ($total > $maxExpanded || $i > $maxFiles) { $zip->close(); reply(['error'=>'ZIP-filen indeholder for mange filer eller fylder over 5 GB udpakket.'],422); }
+                $relative = implode('/', array_slice($parts, 2));
+                $projects[$key]['files'][] = ['path'=>$path,'name'=>$relative,'size'=>$size];
+                $projects[$key]['totalSize'] += $size;
+            }
+            $zip->close();
+            if (!$projects) reply(['error'=>'Ingen projekter fundet. Brug dansk/Projektnavn/fil eller mediegrafiker/Projektnavn/fil.'],422);
+            $token = bin2hex(random_bytes(16)); $staged = DATA_DIR . '/bulk-' . $token . '.zip';
+            if (!move_uploaded_file($_FILES['archive']['tmp_name'], $staged)) reply(['error'=>'ZIP-filen kunne ikke gemmes i privat lager.'],500);
+            chmod($staged,0600);
+            $_SESSION['bulk'][$token] = ['file'=>basename($staged),'projects'=>$projects,'created'=>time()];
+            reply(['token'=>$token,'projects'=>array_values($projects)]);
+        }
+        $token = input('token'); $selectedRaw = $_POST['selected'] ?? '[]';
+        if (!preg_match('/^[a-f0-9]{32}$/D',$token) || !isset($_SESSION['bulk'][$token]) || !is_string($selectedRaw)) reply(['error'=>'Importen er udløbet. Upload ZIP-filen igen.'],422);
+        $selected = json_decode($selectedRaw,true);
+        if (!is_array($selected) || count($selected)>1000) reply(['error'=>'Ugyldigt projektvalg.'],422);
+        $stage = DATA_DIR . '/' . $_SESSION['bulk'][$token]['file'];
+        if (!is_file($stage)) reply(['error'=>'Den midlertidige ZIP-fil mangler. Upload igen.'],422);
+        $zip = new ZipArchive(); if ($zip->open($stage)!==true) reply(['error'=>'ZIP-filen kunne ikke åbnes.'],422);
+        $allowed = $_SESSION['bulk'][$token]['projects']; $made=0; $addedKeys=[];
+        try {
+            $db->beginTransaction();
+            foreach ($selected as $projectKey) {
+                if (!is_string($projectKey) || !isset($allowed[$projectKey])) continue;
+                [$category,$folder] = explode('/',$projectKey,2); $files=[];
+                foreach ($allowed[$projectKey]['files'] as $entry) {
+                    $stream=$zip->getStream($entry['path']); if (!$stream) continue;
+                    $key=bin2hex(random_bytes(24)); $dest=DATA_DIR.'/'.$key; $out=fopen($dest,'xb');
+                    if (!$out) { fclose($stream); throw new RuntimeException('Kunne ikke gemme en projektfil.'); }
+                    $copied=stream_copy_to_stream($stream,$out); fclose($stream); fclose($out);
+                    if ($copied===false || $copied<1 || $copied>(int)$entry['size']) { @unlink($dest); continue; }
+                    chmod($dest,0600); $addedKeys[]=$key;
+                    $mime=(new finfo(FILEINFO_MIME_TYPE))->file($dest) ?: 'application/octet-stream';
+                    if (!in_array($mime,['application/pdf','image/jpeg','image/png','image/gif','image/webp'],true)) $mime='application/octet-stream';
+                    $files[]=['key'=>$key,'name'=>substr($entry['name'],0,200),'type'=>$mime,'size'=>$copied];
+                }
+                if (!$files) continue;
+                $idNew=bin2hex(random_bytes(16)); $main=array_shift($files);
+                $row=['id'=>$idNew,'title'=>substr($folder,0,120),'category'=>$category,'description'=>'','date'=>date('Y-m-d'),
+                    'file_key'=>$main['key'],'file_name'=>$main['name'],'file_type'=>$main['type'],'file_size'=>$main['size'],
+                    'thumb_key'=>null,'thumb_type'=>null,'created_at'=>gmdate('Y-m-d\\TH:i:s\\Z'),'status'=>'draft','publish_at'=>null];
+                $keys=array_keys($row); $q=$db->prepare('INSERT INTO posts ('.implode(',',$keys).') VALUES (:'.implode(',:',$keys).')'); $q->execute($row);
+                $ins=$db->prepare('INSERT INTO project_files (post_id,file_key,file_name,file_type,file_size) VALUES (?,?,?,?,?)');
+                foreach($files as $f) $ins->execute([$idNew,$f['key'],$f['name'],$f['type'],$f['size']]);
+                $made++;
+            }
+            $db->commit(); $zip->close(); @unlink($stage); unset($_SESSION['bulk'][$token]);
+            reply(['ok'=>true,'imported'=>$made,'status'=>'draft']);
+        } catch(Throwable $e) {
+            if($db->inTransaction()) $db->rollBack();
+            $zip->close(); foreach($addedKeys as $key) remove_file($key);
+            throw $e;
+        }
+    }
+
     $id = input('id');
     if ($id !== '' && !preg_match('/^[a-f0-9]{32}$/D', $id)) reply(['error' => 'Ugyldigt projekt.'], 422);
     $db->exec('BEGIN IMMEDIATE'); $newFiles = [];
