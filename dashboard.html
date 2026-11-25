@@ -8,6 +8,7 @@
         <link rel="stylesheet" href="style.css">
         <script src="script.js?v=9" defer></script>
         <script src="admin.js" defer></script>
+        <script src="bulk-import.js" defer></script>
     </head>
     <body data-page="dashboard">
         <a class="skip-link" href="#main">Spring til indhold</a>
@@ -41,6 +42,22 @@
                 <button type="button" class="button button-secondary" data-tab="stats" aria-pressed="false">Statistik</button>
             </nav>
             <div class="dashboard-grid" id="panel-projects" data-panel>
+                
+                <section class="card" style="margin-bottom:1.5rem" aria-labelledby="bulk-heading">
+                    <h2 id="bulk-heading">Bulkimport fra ZIP</h2>
+                    <p>ZIP-struktur: <code>dansk/Projektnavn/filer</code> og <code>mediegrafiker/Projektnavn/filer</code>. Mapper under projektmappen bevares.</p>
+                    <form id="bulk-form">
+                        <label for="bulk-archive">ZIP-fil</label>
+                        <input id="bulk-archive" name="archive" type="file" accept=".zip,application/zip" required>
+                        <button class="button" id="bulk-preview-button" type="submit">Scan ZIP og vis projekter</button>
+                    </form>
+                    <p id="bulk-status" class="status" role="status"></p>
+                    <div id="bulk-preview" hidden>
+                        <div id="bulk-project-list"></div>
+                        <button class="button" id="bulk-import-button" type="button">Importer valgte projekter som kladder</button>
+                    </div>
+                </section>
+
                 <section class="card editor" aria-labelledby="editor-title">
                     <h2 id="editor-title">Nyt projekt</h2>
                     <p id="editor-status" class="status" role="status"></p>
